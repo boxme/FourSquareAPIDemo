@@ -2,44 +2,43 @@ package com.desmond.foursquareapidemo;
 
 import android.app.Dialog;
 import android.content.IntentSender;
-import android.graphics.Bitmap;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.v4.app.DialogFragment;
 import android.support.v7.app.ActionBarActivity;
 import android.util.Log;
-import android.widget.ImageView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.BaseAdapter;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.ViewSwitcher;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesClient;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.location.LocationClient;
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.MapView;
+import com.google.android.gms.maps.MapsInitializer;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import br.com.condesales.EasyFoursquareAsync;
-import br.com.condesales.criterias.CheckInCriteria;
-import br.com.condesales.criterias.TipsCriteria;
 import br.com.condesales.criterias.VenuesCriteria;
-import br.com.condesales.listeners.AccessTokenRequestListener;
-import br.com.condesales.listeners.CheckInListener;
 import br.com.condesales.listeners.FoursquareVenuesRequestListener;
-import br.com.condesales.listeners.ImageRequestListener;
-import br.com.condesales.listeners.TipsRequestListener;
-import br.com.condesales.listeners.UserInfoRequestListener;
-import br.com.condesales.models.Checkin;
-import br.com.condesales.models.Tip;
-import br.com.condesales.models.User;
 import br.com.condesales.models.Venue;
-import br.com.condesales.tasks.users.UserImageRequest;
 
 
 public class MainActivity extends ActionBarActivity implements
-        AccessTokenRequestListener,
-        ImageRequestListener,
         GooglePlayServicesClient.ConnectionCallbacks,
         GooglePlayServicesClient.OnConnectionFailedListener {
 
@@ -48,20 +47,38 @@ public class MainActivity extends ActionBarActivity implements
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
 
     private EasyFoursquareAsync mAsync;
-    private ImageView mUserImage;
-    private ViewSwitcher mViewSwitcher;
-    private TextView mUserName;
 
     private LocationClient mLocationClient;
+
+    private MapView mMapView;
+    private GoogleMap mMap;
+
+    private ListView mVenuesListView;
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mMapView.onResume();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mUserImage = (ImageView) findViewById(R.id.imageView1);
-        mViewSwitcher = (ViewSwitcher) findViewById(R.id.viewSwitcher1);
-        mUserName = (TextView) findViewById(R.id.textView1);
+        mVenuesListView = (ListView) findViewById(R.id.list_nearby_venues);
+
+        MapsInitializer.initialize(this);
+
+        mMapView = (MapView) findViewById(R.id.map);
+        mMapView.onCreate(savedInstanceState);
+
+        mMap = mMapView.getMap();
+        mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+        mMap.getUiSettings().setMyLocationButtonEnabled(true);
+        mMap.getUiSettings().setAllGesturesEnabled(true);
+        mMap.getUiSettings().setZoomGesturesEnabled(true);
+        mMap.setMyLocationEnabled(true);
 
         mLocationClient = new LocationClient(this, this, this);
         mLocationClient.connect();
@@ -74,6 +91,18 @@ public class MainActivity extends ActionBarActivity implements
     protected void onStop() {
         mLocationClient.disconnect();
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        mMapView.onDestroy();
+        super.onDestroy();
+    }
+
+    @Override
+    public void onLowMemory() {
+        mMapView.onLowMemory();
+        super.onLowMemory();
     }
 
     @Override
@@ -111,93 +140,7 @@ public class MainActivity extends ActionBarActivity implements
                 // Log the error
                 e.printStackTrace();
             }
-        } else {
-            /*
-             * If no resolution is available, display a dialog to the
-             * user with the error.
-             */
         }
-    }
-
-    @Override
-    public void onAccessGrant(String accessToken) {
-        // with the access token you can perform any request to foursquare.
-        mAsync.getUserInfo(new UserInfoRequestListener() {
-
-            @Override
-            public void onError(String errorMsg) {
-                // Some error getting user info
-                Toast.makeText(MainActivity.this, errorMsg, Toast.LENGTH_LONG)
-                        .show();
-            }
-
-            @Override
-            public void onUserInfoFetched(User user) {
-                if (user.getBitmapPhoto() == null) {
-                    UserImageRequest request = new UserImageRequest(
-                            MainActivity.this, MainActivity.this);
-                    request.execute(user.getPhoto());
-                }
-                else {
-                    mUserImage.setImageBitmap(user.getBitmapPhoto());
-                }
-                mUserName.setText(user.getFirstName() + " " + user.getLastName());
-                mViewSwitcher.showNext();
-                Toast.makeText(MainActivity.this, "Got it!", Toast.LENGTH_LONG)
-                        .show();
-            }
-        });
-    }
-
-    @Override
-    public void onImageFetched(Bitmap bmp) {
-        mUserImage.setImageBitmap(bmp);
-    }
-
-    @Override
-    public void onError(String errorMsg) {
-        // Do something with the error message
-        Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
-    }
-
-    private void checkin() {
-
-        CheckInCriteria criteria = new CheckInCriteria();
-        criteria.setBroadcast(CheckInCriteria.BroadCastType.PUBLIC);
-        criteria.setVenueId("4c7063da9c6d6dcb9798d27a");
-
-        mAsync.checkIn(new CheckInListener() {
-            @Override
-            public void onCheckInDone(Checkin checkin) {
-                Toast.makeText(MainActivity.this, checkin.getId(), Toast.LENGTH_LONG).show();
-            }
-
-            @Override
-            public void onError(String errorMsg) {
-                Toast.makeText(MainActivity.this, "error", Toast.LENGTH_LONG).show();
-            }
-        }, criteria);
-    }
-
-    private void requestTipsNearby() {
-        Location loc = new Location("");
-        loc.setLatitude(40.4363483);
-        loc.setLongitude(-3.6815703);
-
-        TipsCriteria criteria = new TipsCriteria();
-        criteria.setLocation(loc);
-        mAsync.getTipsNearby(new TipsRequestListener() {
-
-            @Override
-            public void onError(String errorMsg) {
-                Toast.makeText(MainActivity.this, "error", Toast.LENGTH_LONG).show();
-            }
-
-            @Override
-            public void onTipsFetched(ArrayList<Tip> tips) {
-                Toast.makeText(MainActivity.this, tips.toString(), Toast.LENGTH_LONG).show();
-            }
-        }, criteria);
     }
 
     private void getVenues() {
@@ -210,13 +153,12 @@ public class MainActivity extends ActionBarActivity implements
 
             @Override
             public void onVenuesFetched(ArrayList<Venue> venues) {
-                Log.d(TAG, "Nearby venus count " + venues.size());
+                setupAdapter(venues);
+                setupMap();
             }
 
             @Override
-            public void onError(String errorMsg) {
-
-            }
+            public void onError(String errorMsg) {}
 
         }, venuesCriteria);
     }
@@ -251,6 +193,57 @@ public class MainActivity extends ActionBarActivity implements
         return currentLocation;
     }
 
+    private void setupMap() {
+        final Location currentLocation = getLocation();
+        final LatLng locationLatLng = new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude());
+        final MarkerOptions options = new MarkerOptions().position(locationLatLng).title("Meet Here").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+
+        options.draggable(true);
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(locationLatLng, 18));
+        mMap.addMarker(options).showInfoWindow();
+        mMap.animateCamera(CameraUpdateFactory.zoomTo(18), 2000, null);
+
+        mMap.setOnMarkerDragListener(new GoogleMap.OnMarkerDragListener() {
+            @Override
+            public void onMarkerDragStart(Marker marker) {}
+
+            @Override
+            public void onMarkerDrag(Marker marker) {}
+
+            @Override
+            public void onMarkerDragEnd(Marker marker) {
+
+            }
+        });
+
+        mVenuesListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                mMap.clear();
+                LatLng newLatLng;
+                if (position == 0) {
+                    Location currentLocation = getLocation();
+                    newLatLng = new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude());
+                }
+                else {
+                    Venue venue = (Venue) (mVenuesListView.getAdapter()).getItem(position);
+                    newLatLng = new LatLng(venue.getLocation().getLat(), venue.getLocation().getLng());
+                }
+                options.position(newLatLng);
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(newLatLng, 18));
+                mMap.addMarker(options).showInfoWindow();
+            }
+        });
+    }
+
+    private void setupAdapter(List<Venue> venues) {
+
+        if (mVenuesListView.getAdapter() == null) {
+            mVenuesListView.setAdapter(new VenuesListAdapter(venues));
+        }
+    }
+
     public static class ErrorDialogFragment extends DialogFragment {
         private Dialog mDialog;
 
@@ -269,4 +262,67 @@ public class MainActivity extends ActionBarActivity implements
         }
     }
 
+    private static class VenuesListAdapter extends BaseAdapter {
+
+        private List<Venue> mNearbyVenues;
+
+        public VenuesListAdapter(List<Venue> nearbyVenues) {
+            mNearbyVenues = nearbyVenues;
+        }
+
+        @Override
+        public int getCount() {
+            return mNearbyVenues.size() + 1;
+        }
+
+        @Override
+        public Object getItem(int position) {
+            if (position == 0) {
+                return null;
+            }
+
+            return mNearbyVenues.get(position - 1);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return 0;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            ViewHolder viewHolder;
+            if (convertView == null) {
+                convertView = LayoutInflater.from(parent.getContext()).inflate(R.layout.venue_location_layout, parent, false);
+                viewHolder = new ViewHolder(convertView);
+                convertView.setTag(viewHolder);
+            }
+
+            viewHolder = (ViewHolder) convertView.getTag();
+
+            if (position == 0) {
+                viewHolder.mVenueName.setText("Current Location");
+                viewHolder.mVenueAddress.setText("");
+            }
+            else {
+                Venue venue = mNearbyVenues.get(position - 1);
+                br.com.condesales.models.Location location = venue.getLocation();
+
+                viewHolder.mVenueName.setText(venue.getName());
+                viewHolder.mVenueAddress.setText(location.getAddress());
+            }
+
+            return convertView;
+        }
+
+        private static class ViewHolder {
+            TextView mVenueName;
+            TextView mVenueAddress;
+
+            public ViewHolder(View view) {
+                mVenueName = (TextView) view.findViewById(R.id.venue_name);
+                mVenueAddress = (TextView) view.findViewById(R.id.venue_address);
+            }
+        }
+    }
 }
